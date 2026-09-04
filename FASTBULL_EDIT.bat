@@ -9,11 +9,20 @@ set /p "HEADLINE=พาดหัว (เว้นว่างให้ระบ�
 set /p "PAGE=ชื่อเพจ: "
 if "%PAGE%"=="" set "PAGE=FASTBULL"
 set /p "CTA=ข้อความปิดคลิป (เว้นว่างใช้ค่าตามโหมด): "
+set /p "BROLL=โฟลเดอร์ B-roll ที่ได้รับอนุญาต (เว้นว่างถ้าไม่มี): "
 
-if "%CTA%"=="" (
-  ".venv\Scripts\python.exe" scripts\fastbull_editor.py run --input "%INPUT%" --mode "%MODE%" --headline "%HEADLINE%" --page-name "%PAGE%"
+if "%BROLL%"=="" (
+  if "%CTA%"=="" (
+    ".venv\Scripts\python.exe" scripts\fastbull_editor.py run --input "%INPUT%" --mode "%MODE%" --headline "%HEADLINE%" --page-name "%PAGE%"
+  ) else (
+    ".venv\Scripts\python.exe" scripts\fastbull_editor.py run --input "%INPUT%" --mode "%MODE%" --headline "%HEADLINE%" --page-name "%PAGE%" --cta "%CTA%"
+  )
 ) else (
-  ".venv\Scripts\python.exe" scripts\fastbull_editor.py run --input "%INPUT%" --mode "%MODE%" --headline "%HEADLINE%" --page-name "%PAGE%" --cta "%CTA%"
+  if "%CTA%"=="" (
+    ".venv\Scripts\python.exe" scripts\fastbull_editor.py run --input "%INPUT%" --mode "%MODE%" --headline "%HEADLINE%" --page-name "%PAGE%" --broll "%BROLL%"
+  ) else (
+    ".venv\Scripts\python.exe" scripts\fastbull_editor.py run --input "%INPUT%" --mode "%MODE%" --headline "%HEADLINE%" --page-name "%PAGE%" --cta "%CTA%" --broll "%BROLL%"
+  )
 )
 if errorlevel 1 (
   echo.
