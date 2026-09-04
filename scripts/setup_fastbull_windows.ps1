@@ -11,7 +11,7 @@ function Refresh-Path {
 function Ensure-WingetPackage([string]$Command, [string]$PackageId) {
     if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) {
         if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-            throw "ไม่พบ $Command และไม่พบ winget กรุณาติดตั้ง $PackageId แล้วรันไฟล์นี้ใหม่"
+            throw "$Command and winget were not found. Install $PackageId and run this file again."
         }
         winget install --id $PackageId --exact --accept-package-agreements --accept-source-agreements
         Refresh-Path
@@ -23,7 +23,7 @@ Ensure-WingetPackage "node" "OpenJS.NodeJS.LTS"
 Ensure-WingetPackage "ffmpeg" "Gyan.FFmpeg"
 
 $nodeMajor = [int]((& node --version).TrimStart("v").Split(".")[0])
-if ($nodeMajor -lt 22) { throw "ต้องใช้ Node.js 22 ขึ้นไป แต่พบ $(& node --version)" }
+if ($nodeMajor -lt 22) { throw "Node.js 22 or newer is required. Found $(& node --version)." }
 
 if (Get-Command py -ErrorAction SilentlyContinue) {
     & py -3.12 -m venv .venv
@@ -47,7 +47,7 @@ $browserCandidates = @(
     "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
 )
 $BrowserPath = $browserCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $BrowserPath) { throw "ไม่พบ Microsoft Edge หรือ Google Chrome สำหรับเรนเดอร์วิดีโอ" }
+if (-not $BrowserPath) { throw "Microsoft Edge or Google Chrome is required to render video." }
 $env:HYPERFRAMES_BROWSER_PATH = $BrowserPath
 
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
@@ -71,5 +71,5 @@ Set-Content .env -Value $envBody -Encoding utf8
 & .\node_modules\.bin\hyperframes.cmd telemetry disable
 & .\.venv\Scripts\python.exe scripts\fastbull_editor.py doctor
 & "$PSScriptRoot\create_fastbull_desktop_shortcut.ps1" -Quiet
-Write-Host "FASTBULL Editor พร้อมใช้งาน ค่า API 0 บาท" -ForegroundColor Green
-Write-Host "สร้างไอคอน FASTBULL Editor บน Desktop แล้ว" -ForegroundColor Green
+Write-Host "FASTBULL Editor is ready. API cost: 0 THB." -ForegroundColor Green
+Write-Host "FASTBULL Editor shortcut was created on your Desktop." -ForegroundColor Green

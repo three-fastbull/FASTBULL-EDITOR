@@ -3,8 +3,8 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms
 
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.Title = "เลือกคลิปดิบสำหรับ FASTBULL Editor"
-$dialog.Filter = "ไฟล์วิดีโอ|*.mp4;*.mov;*.mkv;*.webm;*.m4v;*.avi|ไฟล์ทั้งหมด|*.*"
+$dialog.Title = "Choose a raw video for FASTBULL Editor"
+$dialog.Filter = "Video files|*.mp4;*.mov;*.mkv;*.webm;*.m4v;*.avi|All files|*.*"
 $dialog.Multiselect = $false
 $dialog.CheckFileExists = $true
 

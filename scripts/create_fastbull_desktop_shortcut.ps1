@@ -7,12 +7,12 @@ $ProjectDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Pat
 $LauncherPath = Join-Path $ProjectDir "FASTBULL_EDIT.bat"
 
 if (-not (Test-Path $LauncherPath)) {
-    throw "ไม่พบ FASTBULL_EDIT.bat ใน $ProjectDir"
+    throw "FASTBULL_EDIT.bat was not found in $ProjectDir"
 }
 
 $DesktopPath = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)
 if (-not $DesktopPath) {
-    throw "ไม่พบโฟลเดอร์ Desktop ของ Windows"
+    throw "The Windows Desktop folder was not found"
 }
 
 $ShortcutPath = Join-Path $DesktopPath "FASTBULL Editor.lnk"
@@ -26,6 +26,6 @@ $Shortcut.WindowStyle = 1
 $Shortcut.Save()
 
 if (-not $Quiet) {
-    Write-Host "สร้างไอคอน FASTBULL Editor บน Desktop แล้ว" -ForegroundColor Green
-    Write-Host "จากนี้ดับเบิลคลิกไอคอน แล้วเลือกคลิปที่ต้องการตัดได้เลย"
+    Write-Host "FASTBULL Editor shortcut was created on your Desktop." -ForegroundColor Green
+    Write-Host "Double-click the shortcut and choose a video to begin."
 }
