@@ -1,8 +1,25 @@
 @echo off
-setlocal
+chcp 65001 >nul
+setlocal EnableExtensions DisableDelayedExpansion
 cd /d "%~dp0"
+
+if not exist ".venv\Scripts\python.exe" (
+  echo ยังตั้งค่าระบบไม่เสร็จ กรุณาดับเบิลคลิก FASTBULL_SETUP_WINDOWS.bat ก่อน 1 ครั้ง
+  pause
+  exit /b 1
+)
+
 set "INPUT=%~1"
-if "%INPUT%"=="" set /p "INPUT=ลากไฟล์วิดีโอมาวาง หรือพิมพ์ที่อยู่ไฟล์: "
+if not defined INPUT (
+  for /f "usebackq delims=" %%I in (`powershell -NoProfile -STA -ExecutionPolicy Bypass -File "scripts\select_video.ps1"`) do set "INPUT=%%I"
+)
+if not defined INPUT exit /b 0
+if not exist "%INPUT%" (
+  echo ไม่พบไฟล์วิดีโอ: %INPUT%
+  pause
+  exit /b 1
+)
+
 set /p "MODE=โหมด (vlog / value / awareness / sales): "
 if "%MODE%"=="" set "MODE=value"
 set /p "HEADLINE=พาดหัว (เว้นว่างให้ระบบทำฉบับร่าง): "

@@ -70,4 +70,6 @@ Set-Content .env -Value $envBody -Encoding utf8
 
 & .\node_modules\.bin\hyperframes.cmd telemetry disable
 & .\.venv\Scripts\python.exe scripts\fastbull_editor.py doctor
+& "$PSScriptRoot\create_fastbull_desktop_shortcut.ps1" -Quiet
 Write-Host "FASTBULL Editor พร้อมใช้งาน ค่า API 0 บาท" -ForegroundColor Green
+Write-Host "สร้างไอคอน FASTBULL Editor บน Desktop แล้ว" -ForegroundColor Green
