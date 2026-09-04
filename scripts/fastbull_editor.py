@@ -42,6 +42,116 @@ def _read_json(path: str | Path) -> Any:
     return json.loads(Path(path).read_text(encoding="utf-8-sig"))
 
 
+def _natural_path_key(path: Path) -> tuple[tuple[int, int | str], ...]:
+    parts = re.split(r"(\d+)", path.name)
+    return tuple((0, int(part)) if part.isdigit() else (1, part.casefold()) for part in parts)
+
+
+def _resolve_sources(args: argparse.Namespace) -> list[Path]:
+    requested = list(args.input or [])
+    if args.input_list:
+        input_list = Path(args.input_list).expanduser().resolve()
+        if not input_list.is_file():
+            raise FileNotFoundError(f"ไม่พบรายการไฟล์: {input_list}")
+        requested.extend(
+            Path(line.strip())
+            for line in input_list.read_text(encoding="utf-8-sig").splitlines()
+            if line.strip()
+        )
+
+    if not requested:
+        raise ValueError("กรุณาเลือกไฟล์วิดีโออย่างน้อย 1 ไฟล์")
+
+    resolved: list[Path] = []
+    seen: set[Path] = set()
+    for item in requested:
+        path = Path(item).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"ไม่พบไฟล์: {path}")
+        if path not in seen:
+            resolved.append(path)
+            seen.add(path)
+    return sorted(resolved, key=_natural_path_key)
+
+
+def _run_media_command(command: list[str], *, cwd: Path | None = None, label: str) -> None:
+    try:
+        result = subprocess.run(
+            command, cwd=cwd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        )
+    except OSError as error:
+        raise RuntimeError(f"{label}: {error}") from error
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "unknown FFmpeg error").strip()[-2000:]
+        raise RuntimeError(f"{label}: {detail}")
+
+
+def _has_audio_stream(source: Path) -> bool:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "a:0",
+                "-show_entries", "stream=index", "-of", "csv=p=0", str(source),
+            ],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+    except OSError as error:
+        raise RuntimeError(f"ตรวจเสียงของ {source.name} ไม่สำเร็จ: {error}") from error
+    if result.returncode != 0:
+        raise RuntimeError(f"ตรวจเสียงของ {source.name} ไม่สำเร็จ: {result.stderr.strip()}")
+    return bool(result.stdout.strip())
+
+
+def _join_sources(sources: list[Path], job_dir: Path) -> Path:
+    if len(sources) == 1:
+        return sources[0]
+
+    parts_dir = job_dir / "joined_source_parts"
+    parts_dir.mkdir(parents=True, exist_ok=True)
+    normalized_parts: list[Path] = []
+    video_filter = (
+        "scale=1080:1920:force_original_aspect_ratio=decrease,"
+        "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30"
+    )
+
+    for index, source in enumerate(sources, start=1):
+        print(f"  เตรียมไฟล์ {index}/{len(sources)}: {source.name}")
+        part = parts_dir / f"part-{index:04d}.mp4"
+        command = ["ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error", "-i", str(source)]
+        has_audio = _has_audio_stream(source)
+        if not has_audio:
+            command.extend(["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"])
+        command.extend(["-map", "0:v:0", "-map", "0:a:0" if has_audio else "1:a:0"])
+        if not has_audio:
+            command.append("-shortest")
+        command.extend([
+            "-vf", video_filter,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-movflags", "+faststart", str(part),
+        ])
+        _run_media_command(command, label=f"เตรียมไฟล์ {source.name} ไม่สำเร็จ")
+        normalized_parts.append(part)
+
+    concat_list = parts_dir / "concat.txt"
+    concat_list.write_text(
+        "".join(f"file '{part.name}'\n" for part in normalized_parts),
+        encoding="utf-8",
+    )
+    joined = job_dir / "00-source-joined.mp4"
+    _run_media_command(
+        [
+            "ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+            "-f", "concat", "-safe", "1", "-i", concat_list.name,
+            "-c", "copy", "-movflags", "+faststart", str(joined),
+        ],
+        cwd=parts_dir,
+        label="รวมไฟล์วิดีโอไม่สำเร็จ",
+    )
+    return joined
+
+
 def _version(command: list[str]) -> str | None:
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=8,
@@ -113,7 +223,7 @@ class _LocalRegistry:
         return self.tools.get(name)
 
 
-def _load_transcript(args: argparse.Namespace, job_dir: Path) -> dict[str, Any]:
+def _load_transcript(args: argparse.Namespace, job_dir: Path, source: Path) -> dict[str, Any]:
     if args.transcript_json:
         print("[2/8] ใช้ transcript ที่มีเวลารายคำตามที่ระบุ...")
         supplied = _read_json(args.transcript_json)
@@ -126,7 +236,7 @@ def _load_transcript(args: argparse.Namespace, job_dir: Path) -> dict[str, Any]:
 
     print("[2/8] ถอดเสียงและจับเวลารายคำ...")
     result = Transcriber().execute({
-        "input_path": str(args.input), "model_size": args.model,
+        "input_path": str(source), "model_size": args.model,
         "language": args.language, "output_dir": str(job_dir),
     })
     if not result.success:
@@ -137,9 +247,10 @@ def _load_transcript(args: argparse.Namespace, job_dir: Path) -> dict[str, Any]:
 
 def _source_duration(review: dict[str, Any]) -> float:
     files = review.get("files") or []
-    if not files:
-        return 0.0
-    return float(files[0].get("technical_probe", {}).get("duration_seconds", 0.0) or 0.0)
+    return sum(
+        float(item.get("technical_probe", {}).get("duration_seconds", 0.0) or 0.0)
+        for item in files
+    )
 
 
 def _quality_report(output: Path, expected_duration: float, caption_count: int) -> dict[str, Any]:
@@ -168,26 +279,40 @@ def _quality_report(output: Path, expected_duration: float, caption_count: int) 
 
 
 def run_job(args: argparse.Namespace, *, render: bool) -> Path:
-    source = Path(args.input).expanduser().resolve()
-    if not source.is_file():
-        raise FileNotFoundError(f"ไม่พบไฟล์: {source}")
+    sources = _resolve_sources(args)
     profile = get_mode_profile(args.mode)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    source_label = sources[0].stem if len(sources) == 1 else f"{sources[0].stem}-multi-{len(sources)}"
     job_dir = Path(args.job_dir).expanduser().resolve() if args.job_dir else (
-        Path.cwd() / "FASTBULL_OUTPUT" / f"{source.stem}-{profile['key']}-{stamp}"
+        Path.cwd() / "FASTBULL_OUTPUT" / f"{source_label}-{profile['key']}-{stamp}"
     )
     job_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(job_dir / "source_order.json", {
+        "ordering": "natural_filename",
+        "count": len(sources),
+        "files": [str(path) for path in sources],
+    })
 
     print("[1/8] ตรวจไฟล์ภาพ เสียง ความละเอียด และสุ่มเฟรม...")
     review = review_source_media(
-        [source], {"transcribe": False, "review_output_dir": str(job_dir / "review_frames")}, _LocalRegistry()
+        sources, {"transcribe": False, "review_output_dir": str(job_dir / "review_frames")}, _LocalRegistry()
     )
     _write_json(job_dir / "source_media_review.json", review)
     duration = _source_duration(review)
     if duration <= 0:
         raise RuntimeError("อ่านระยะเวลาคลิปไม่ได้")
+    if len(sources) > 1:
+        print(f"  รวมฟุต {len(sources)} ไฟล์ตามลำดับชื่อไฟล์...")
+    source = _join_sources(sources, job_dir)
+    if len(sources) > 1:
+        joined_probe = AudioProbe().execute({"input_path": str(source)})
+        if not joined_probe.success:
+            raise RuntimeError(joined_probe.error or "ตรวจไฟล์ที่รวมแล้วไม่สำเร็จ")
+        duration = float(joined_probe.data.get("duration_seconds", 0.0) or 0.0)
+        if duration <= 0:
+            raise RuntimeError("อ่านระยะเวลาฟุตที่รวมแล้วไม่ได้")
 
-    transcript = _load_transcript(args, job_dir)
+    transcript = _load_transcript(args, job_dir, source)
     segments = list(transcript.get("segments") or [])
     if not segments:
         raise RuntimeError("ไม่พบคำพูดในคลิป จึงยังสร้างซับอย่างปลอดภัยไม่ได้")
@@ -242,7 +367,8 @@ def run_job(args: argparse.Namespace, *, render: bool) -> Path:
     headline = args.headline or auto_headline
     editorial_warnings = [] if args.headline else ["พาดหัวถูกดึงจากประโยคแรกอัตโนมัติ ควรให้บรรณาธิการยืนยันก่อนส่งลูกค้า"]
     manifest = {
-        "version": "1.0", "source": str(source), "job_dir": str(job_dir), "mode": profile,
+        "version": "1.0", "source": str(source), "sources": [str(path) for path in sources],
+        "source_joined": len(sources) > 1, "job_dir": str(job_dir), "mode": profile,
         "headline": headline, "page_name": args.page_name, "cta": args.cta or profile["cta"],
         "edit_analysis": str(job_dir / "edit_analysis.json"), "insert_plan": str(job_dir / "insert_plan.json"),
         "editorial_warnings": editorial_warnings,
@@ -291,7 +417,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="ตรวจว่าเครื่องพร้อมตัดต่อหรือยัง")
     for command in ("analyze", "run"):
         cmd = sub.add_parser(command, help="วิเคราะห์อย่างเดียว" if command == "analyze" else "ตัดต่อและส่งออก")
-        cmd.add_argument("--input", required=True, type=Path)
+        source_group = cmd.add_mutually_exclusive_group(required=True)
+        source_group.add_argument("--input", action="append", type=Path, help="ไฟล์วิดีโอ; ใส่ซ้ำได้")
+        source_group.add_argument("--input-list", type=Path, help="ไฟล์ข้อความที่มีที่อยู่วิดีโอทีละบรรทัด")
         cmd.add_argument("--mode", required=True, help="vlog, value/คุณค่า, awareness/รับรู้, sales/ขาย")
         cmd.add_argument("--headline")
         cmd.add_argument("--eyebrow", default="FASTBULL INSIGHT")

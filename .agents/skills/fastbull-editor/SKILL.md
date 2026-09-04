@@ -1,6 +1,6 @@
 ---
 name: fastbull-editor
-description: Turn raw Thai talking-head or VLOG footage into a polished vertical social edit using the free local FASTBULL pipeline. Use for VLOG, value, awareness, or sales clips that need footage review, Thai transcription, silence cuts, captions, inserts, sound effects, CTA, export, and QC.
+description: Turn one or more raw Thai talking-head or VLOG footage files into a polished vertical social edit using the free local FASTBULL pipeline. Use for VLOG, value, awareness, or sales clips that need footage review, ordered multi-file joining, Thai transcription, silence cuts, captions, inserts, sound effects, CTA, export, and QC.
 ---
 
 # FASTBULL Editor
@@ -9,7 +9,7 @@ Use the repository's deterministic pipeline instead of recreating edit commands.
 
 ## Intake
 
-Identify the source video and editing mode: `vlog`, `value`, `awareness`, or `sales`. Accept Thai aliases. Use `FASTBULL` for the page name and the mode default CTA when the user supplies no override. Do not make the user complete a long questionnaire; ask only when a missing brand/offer fact would materially change the result.
+Identify the source video file or files and editing mode: `vlog`, `value`, `awareness`, or `sales`. Accept Thai aliases. Multiple source files are joined in natural filename order, so confirm or assign names such as `01`, `02`, `03` when narrative order matters. Use `FASTBULL` for the page name and the mode default CTA when the user supplies no override. Do not make the user complete a long questionnaire; ask only when a missing brand/offer fact would materially change the result.
 
 Read [references/modes.md](references/modes.md) when choosing pacing or structure. Read [references/brand-system.md](references/brand-system.md) when changing visual styling. Read [references/quality-gates.md](references/quality-gates.md) before delivery.
 
@@ -31,6 +31,12 @@ Read [references/modes.md](references/modes.md) when choosing pacing or structur
 
    ```bash
    .venv/bin/python scripts/fastbull_editor.py run --input INPUT.mp4 --mode value --headline "HEADLINE" --page-name "FASTBULL" --cta "กดติดตาม"
+   ```
+
+   Repeat `--input` for multiple files. The pipeline reviews every original, normalizes mismatched formats, and joins them in natural filename order before transcription:
+
+   ```bash
+   .venv/bin/python scripts/fastbull_editor.py run --input 01.mp4 --input 02.mp4 --mode vlog --headline "HEADLINE"
    ```
 
    Add one or more `--broll FOLDER` arguments only for client-owned or editor-approved media. The fallback motion cards are original and cost-free.
