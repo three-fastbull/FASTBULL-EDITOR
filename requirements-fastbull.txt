@@ -1,0 +1,13 @@
+# Free, local-first FASTBULL editor additions.
+-r requirements.txt
+faster-whisper>=1.2,<2
+librosa>=0.11,<2
+opencv-python-headless>=4.10,<6
+piper-tts>=1.4,<2
+pysubs2>=1.8,<2
+pythainlp>=5,<6
+pytest>=8,<10
+pytest-asyncio>=0.24,<2
+scenedetect>=0.6,<0.8
+socksio>=1,<2
+yt-dlp>=2025.1

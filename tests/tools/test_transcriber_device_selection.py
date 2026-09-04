@@ -4,6 +4,28 @@ from types import SimpleNamespace
 from tools.analysis.transcriber import Transcriber
 
 
+def test_thai_character_timestamps_are_merged_into_words():
+    segments = [{
+        "id": 0,
+        "start": 0.0,
+        "end": 1.2,
+        "text": "สวัสดีครับ",
+        "words": [
+            {"word": ch, "start": i * 0.1, "end": (i + 1) * 0.1, "probability": 0.9}
+            for i, ch in enumerate("สวัสดีครับ")
+        ],
+    }]
+
+    normalized, words, changed = Transcriber._normalize_thai_word_timestamps(segments)
+
+    assert changed is True
+    assert "".join(w["word"] for w in words) == "สวัสดีครับ"
+    assert len(words) < len(segments[0]["words"])
+    assert normalized[0]["words"] == words
+    assert words[0]["start"] == 0.0
+    assert words[-1]["end"] == 1.0
+
+
 class _Info:
     language = "en"
     duration = 1.0

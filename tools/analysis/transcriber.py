@@ -28,7 +28,7 @@ from tools.base_tool import (
 
 class Transcriber(BaseTool):
     name = "transcriber"
-    version = "0.1.0"
+    version = "0.2.0"
     tier = ToolTier.CORE
     capability = "analysis"
     provider = "whisperx"
@@ -36,7 +36,7 @@ class Transcriber(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
 
-    dependencies = ["python:faster_whisper"]
+    dependencies = ["python:faster_whisper", "python:pythainlp"]
     install_instructions = (
         "pip install faster-whisper  # CPU mode\n"
         "pip install faster-whisper[gpu]  # GPU mode (requires CUDA)\n"
@@ -209,6 +209,12 @@ class Transcriber(BaseTool):
         detected_language = language or info.language
         duration = info.duration
 
+        thai_normalized = False
+        if detected_language == "th":
+            segments, word_timestamps, thai_normalized = (
+                self._normalize_thai_word_timestamps(segments)
+            )
+
         # Optional diarization pass
         if diarize and self._has_diarization():
             segments = self._apply_diarization(
@@ -226,6 +232,9 @@ class Transcriber(BaseTool):
             "device": device,
             "compute_type": compute_type,
             "gpu_fallback_reason": gpu_fallback_reason,
+            "word_timestamp_normalization": (
+                "pythainlp" if thai_normalized else "whisper"
+            ),
         }
 
         # Write transcript JSON
@@ -238,6 +247,88 @@ class Transcriber(BaseTool):
             artifacts=[str(output_path)],
             duration_seconds=round(elapsed, 2),
         )
+
+    @staticmethod
+    def _normalize_thai_word_timestamps(
+        segments: list[dict],
+    ) -> tuple[list[dict], list[dict], bool]:
+        """Merge Whisper's Thai character timestamps into real Thai words.
+
+        Whisper frequently emits one timestamp per Thai codepoint. PyThaiNLP
+        supplies word boundaries; timings remain anchored to the first and
+        last Whisper item that overlap each token, so karaoke highlighting is
+        useful without inventing timing data.
+        """
+        try:
+            from pythainlp.tokenize import word_tokenize
+        except ImportError:
+            words = [w for seg in segments for w in seg.get("words", [])]
+            return segments, words, False
+
+        changed = False
+        rebuilt_words: list[dict] = []
+        rebuilt_segments: list[dict] = []
+
+        for original in segments:
+            seg = dict(original)
+            raw_words = list(original.get("words") or [])
+            if not raw_words:
+                rebuilt_segments.append(seg)
+                continue
+
+            pieces: list[str] = []
+            spans: list[tuple[int, int, dict]] = []
+            cursor = 0
+            for raw in raw_words:
+                piece = "".join(str(raw.get("word", "")).split())
+                if not piece:
+                    continue
+                pieces.append(piece)
+                spans.append((cursor, cursor + len(piece), raw))
+                cursor += len(piece)
+
+            source = "".join(pieces)
+            text = str(seg.get("text") or source)
+            tokens = [
+                "".join(token.split())
+                for token in word_tokenize(text, engine="newmm", keep_whitespace=False)
+                if "".join(token.split())
+            ]
+            if not source or "".join(tokens) != source:
+                rebuilt_segments.append(seg)
+                rebuilt_words.extend(raw_words)
+                continue
+
+            merged: list[dict] = []
+            token_start = 0
+            for token in tokens:
+                token_end = token_start + len(token)
+                overlaps = [raw for start, end, raw in spans if start < token_end and end > token_start]
+                if not overlaps:
+                    token_start = token_end
+                    continue
+                probabilities = [float(w.get("probability", 0.0)) for w in overlaps]
+                merged.append(
+                    {
+                        "word": token,
+                        "start": round(float(overlaps[0]["start"]), 3),
+                        "end": round(float(overlaps[-1]["end"]), 3),
+                        "probability": round(sum(probabilities) / len(probabilities), 3),
+                    }
+                )
+                token_start = token_end
+
+            if merged:
+                changed = changed or len(merged) != len(raw_words) or any(
+                    a.get("word") != b.get("word") for a, b in zip(merged, raw_words)
+                )
+                seg["words"] = merged
+                rebuilt_words.extend(merged)
+            else:
+                rebuilt_words.extend(raw_words)
+            rebuilt_segments.append(seg)
+
+        return rebuilt_segments, rebuilt_words, changed
 
     def _apply_diarization(
         self,

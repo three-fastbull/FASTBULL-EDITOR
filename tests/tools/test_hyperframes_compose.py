@@ -223,6 +223,7 @@ def test_runtime_check_fails_when_npm_package_unresolvable(monkeypatch):
     monkeypatch.setattr(
         HyperFramesCompose, "_npm_resolve_cache", None, raising=False
     )
+    monkeypatch.setattr(HyperFramesCompose, "_local_cli_path", classmethod(lambda cls: None))
     monkeypatch.setattr(
         HyperFramesCompose,
         "_resolve_npm_package",
@@ -242,6 +243,7 @@ def test_runtime_check_fails_when_npm_package_unresolvable(monkeypatch):
 
 
 def test_runtime_check_succeeds_when_npm_resolves(monkeypatch):
+    monkeypatch.setattr(HyperFramesCompose, "_local_cli_path", classmethod(lambda cls: None))
     monkeypatch.setattr(
         HyperFramesCompose, "_npm_resolve_cache", None, raising=False
     )
@@ -265,6 +267,7 @@ def test_runtime_check_succeeds_when_npm_resolves(monkeypatch):
 
 
 def test_runtime_check_fails_when_published_cli_crashes(monkeypatch):
+    monkeypatch.setattr(HyperFramesCompose, "_local_cli_path", classmethod(lambda cls: None))
     monkeypatch.setattr(
         HyperFramesCompose,
         "_resolve_npm_package",
@@ -297,6 +300,7 @@ def test_video_compose_render_engines_follow_hyperframes_runtime_check(monkeypat
     monkeypatch.setattr(
         HyperFramesCompose, "_npm_resolve_cache", None, raising=False
     )
+    monkeypatch.setattr(HyperFramesCompose, "_local_cli_path", classmethod(lambda cls: None))
     monkeypatch.setattr(
         HyperFramesCompose,
         "_resolve_npm_package",
@@ -307,6 +311,22 @@ def test_video_compose_render_engines_follow_hyperframes_runtime_check(monkeypat
         "video_compose must mark hyperframes as unavailable when the real "
         "runtime check fails. Otherwise the HARD RULE lies."
     )
+
+
+def test_runtime_check_prefers_installed_cli_without_npm(monkeypatch, tmp_path):
+    cli = tmp_path / ("hyperframes.cmd" if __import__("os").name == "nt" else "hyperframes")
+    cli.write_text("launcher", encoding="utf-8")
+    monkeypatch.setattr(HyperFramesCompose, "_local_cli_path", classmethod(lambda cls: cli))
+    monkeypatch.setattr(HyperFramesCompose, "_local_package_version", classmethod(lambda cls: "0.8.27"))
+    monkeypatch.setattr(HyperFramesCompose, "_resolve_npm_package", classmethod(lambda cls: {"error": "offline"}))
+    monkeypatch.setattr(HyperFramesCompose, "_probe_cli", classmethod(lambda cls: {"status": "ok"}))
+
+    rc = HyperFramesCompose()._runtime_check()
+    if rc["node_major"] is None or not rc["ffmpeg_available"]:
+        pytest.skip("Local runtime floor not met on this machine")
+    assert rc["runtime_available"] is True
+    assert rc["cli_source"] == "local"
+    assert rc["npm_package_version"] == "0.8.27"
 
 
 def test_provider_menu_summary_returns_expected_shape():

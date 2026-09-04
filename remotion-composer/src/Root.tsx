@@ -16,6 +16,7 @@ import { ProductReveal, ProductRevealProps } from "./components/ProductReveal";
 import { CaptionOverlay, WordCaption } from "./components/CaptionOverlay";
 import { CollageBurst, CollageBurstProps } from "./CollageBurst";
 import { LyricOverlay, LyricOverlayProps } from "./LyricOverlay";
+import { FastbullTalkingHead, FastbullTalkingHeadProps } from "./FastbullTalkingHead";
 
 // ---------------------------------------------------------------------------
 // Theme System — prevents every video from looking like dark fintech
@@ -190,6 +191,25 @@ export const Root: React.FC = () => {
           fontSize: 52,
           highlightColor: "#22D3EE",
         }}
+      />
+      <Composition
+        id="FastbullTalkingHead"
+        component={FastbullTalkingHead}
+        durationInFrames={30 * 300}
+        fps={30}
+        width={1080}
+        height={1920}
+        defaultProps={{
+          videoSrc: "",
+          captions: [],
+          headline: "มีเงินแล้ว มีเวลาหรือยัง?",
+          eyebrow: "FASTBULL INSIGHT",
+          pageName: "FASTBULL",
+          cta: "กดติดตาม",
+          wordsPerPage: 4,
+          fontSize: 54,
+          sfx: [],
+        } as FastbullTalkingHeadProps}
       />
       <Composition
         id="TitledVideo"

@@ -149,8 +149,9 @@ class AudioProbe(BaseTool):
         fmt = data.get("format", {})
         streams = data.get("streams", [])
 
-        # Find audio stream
+        # Find primary streams
         audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
+        video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
 
         probe_data: dict[str, Any] = {
             "file": str(input_path),
@@ -169,6 +170,32 @@ class AudioProbe(BaseTool):
                 "channels": audio_stream.get("channels"),
                 "channel_layout": audio_stream.get("channel_layout"),
                 "bit_rate": int(audio_stream.get("bit_rate", 0)) if audio_stream.get("bit_rate") else None,
+            }
+
+        if video_stream:
+            fps_raw = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate") or "0/1"
+            try:
+                numerator, denominator = fps_raw.split("/", 1)
+                fps = float(numerator) / max(float(denominator), 1.0)
+            except (AttributeError, ValueError, ZeroDivisionError):
+                fps = 0.0
+            rotation = 0
+            for side_data in video_stream.get("side_data_list", []):
+                if "rotation" in side_data:
+                    rotation = int(side_data["rotation"])
+                    break
+            if not rotation:
+                try:
+                    rotation = int(video_stream.get("tags", {}).get("rotate", 0))
+                except (TypeError, ValueError):
+                    rotation = 0
+            probe_data["video"] = {
+                "codec": video_stream.get("codec_name"),
+                "width": int(video_stream.get("width", 0)),
+                "height": int(video_stream.get("height", 0)),
+                "fps": round(fps, 3),
+                "pixel_format": video_stream.get("pix_fmt"),
+                "rotation": rotation,
             }
 
         return ToolResult(

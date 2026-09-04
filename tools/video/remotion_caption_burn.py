@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import shutil
 import time
@@ -51,7 +52,7 @@ from tools.base_tool import (
 
 class RemotionCaptionBurn(BaseTool):
     name = "remotion_caption_burn"
-    version = "0.1.0"
+    version = "0.2.0"
     tier = ToolTier.CORE
     capability = "subtitle"
     provider = "remotion"
@@ -111,6 +112,25 @@ class RemotionCaptionBurn(BaseTool):
                 "type": "string",
                 "default": "#22D3EE",
                 "description": "Highlight color for the active word (hex).",
+            },
+            "style_preset": {
+                "type": "string",
+                "enum": ["standard", "fastbull_sport_luxury"],
+                "default": "standard",
+            },
+            "headline": {"type": "string", "description": "Opening hook headline."},
+            "eyebrow": {"type": "string", "default": "FASTBULL INSIGHT"},
+            "page_name": {"type": "string", "default": "FASTBULL"},
+            "cta": {"type": "string", "default": "กดติดตาม"},
+            "cta_start_seconds": {"type": "number"},
+            "language": {"type": "string", "default": "th"},
+            "sfx_cues": {
+                "type": "array",
+                "description": "Local WAV cues: {path, at_seconds, volume}.",
+            },
+            "insert_cues": {
+                "type": "array",
+                "description": "Insert plan cues from fastbull_insert_planner.",
             },
             "corrections": {
                 "type": "object",
@@ -202,6 +222,7 @@ class RemotionCaptionBurn(BaseTool):
                         "word": fixed,
                         "startMs": int(w["start"] * 1000),
                         "endMs": int(w["end"] * 1000),
+                        "pageBreakAfter": w is words[-1],
                     })
             elif "text" in seg:
                 text_words = seg["text"].strip().split()
@@ -273,6 +294,15 @@ class RemotionCaptionBurn(BaseTool):
         font_size: int,
         highlight_color: str,
         overlays: list[dict] | None = None,
+        style_preset: str = "standard",
+        headline: str = "",
+        eyebrow: str = "FASTBULL INSIGHT",
+        page_name: str = "FASTBULL",
+        cta: str = "กดติดตาม",
+        cta_start_seconds: float | None = None,
+        language: str = "th",
+        sfx_cues: list[dict] | None = None,
+        insert_cues: list[dict] | None = None,
     ) -> ToolResult:
         root = self._find_remotion_root()
         if root is None:
@@ -303,7 +333,7 @@ class RemotionCaptionBurn(BaseTool):
         width = int(dim_parts[0])
         height = int(dim_parts[1])
 
-        # Copy video to Remotion public folder
+        # Copy media and the bundled OFL-licensed Thai font to Remotion public.
         pub_dir = root / "public" / "talking-head"
         pub_dir.mkdir(parents=True, exist_ok=True)
         video_filename = Path(input_path).name
@@ -312,31 +342,113 @@ class RemotionCaptionBurn(BaseTool):
 
         # Build props JSON
         props = {
-            "videoSrc": f"public/talking-head/{video_filename}",
+            "videoSrc": f"talking-head/{video_filename}",
             "captions": captions,
             "overlays": overlays or [],
             "wordsPerPage": words_per_page,
             "fontSize": font_size,
             "highlightColor": highlight_color,
         }
+        composition = "TalkingHead"
+        if style_preset == "fastbull_sport_luxury":
+            composition = "FastbullTalkingHead"
+            # Deliver social vertical at a consistent professional resolution,
+            # even when the client sends a 720p proxy or lower-res source.
+            width, height = 1080, 1920
+            repo_root = Path(__file__).resolve().parent.parent.parent
+            source_font = repo_root / "assets" / "fonts" / "noto-sans-thai" / "NotoSansThai-Variable.ttf"
+            if source_font.exists():
+                font_dir = root / "public" / "fonts"
+                font_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_font, font_dir / source_font.name)
+
+            public_sfx = root / "public" / "fastbull-sfx"
+            public_sfx.mkdir(parents=True, exist_ok=True)
+            staged_cues: list[dict] = []
+            for index, cue in enumerate(sfx_cues or []):
+                source = Path(str(cue.get("path", "")))
+                if not source.is_file():
+                    continue
+                staged_name = f"{index:02d}-{source.name}"
+                shutil.copy2(source, public_sfx / staged_name)
+                staged_cues.append({
+                    "src": f"fastbull-sfx/{staged_name}",
+                    "atSeconds": float(cue.get("at_seconds", 0.0)),
+                    "volume": float(cue.get("volume", 0.25)),
+                })
+            public_inserts = root / "public" / "fastbull-inserts"
+            public_inserts.mkdir(parents=True, exist_ok=True)
+            staged_inserts: list[dict] = []
+            for index, cue in enumerate(insert_cues or []):
+                staged = {
+                    "type": cue.get("type", "motion_card"),
+                    "atSeconds": float(cue.get("at_seconds", 0.0)),
+                    "durationSeconds": float(cue.get("duration_seconds", 1.8)),
+                    "label": str(cue.get("label", "")),
+                }
+                source = Path(str(cue.get("asset_path", "")))
+                if staged["type"] in {"video", "image"} and source.is_file():
+                    staged_name = f"{index:02d}-{source.name}"
+                    shutil.copy2(source, public_inserts / staged_name)
+                    staged["src"] = f"fastbull-inserts/{staged_name}"
+                else:
+                    staged["type"] = "motion_card"
+                staged_inserts.append(staged)
+            props.update({
+                "headline": headline,
+                "eyebrow": eyebrow,
+                "pageName": page_name,
+                "cta": cta,
+                "ctaStartSeconds": (
+                    float(cta_start_seconds)
+                    if cta_start_seconds is not None
+                    else max(0.0, duration_s - 2.7)
+                ),
+                "captionWordSeparator": "" if language == "th" else " ",
+                "sfx": staged_cues,
+                "inserts": staged_inserts,
+            })
         props_dir = root / "public" / "demo-props"
         props_dir.mkdir(parents=True, exist_ok=True)
         props_file = props_dir / f"caption-burn-{Path(input_path).stem}.json"
         props_file.write_text(json.dumps(props, indent=2), encoding="utf-8")
 
-        # Render (use npx.cmd on Windows for subprocess compatibility)
-        import sys
-        npx_bin = "npx.cmd" if sys.platform == "win32" else "npx"
+        # Render with the pinned local CLI; no registry access is required.
+        suffix = ".cmd" if os.name == "nt" else ""
+        local_remotion = root / "node_modules" / ".bin" / f"remotion{suffix}"
+        remotion_cmd = str(local_remotion) if local_remotion.exists() else "npx"
         render_cmd = [
-            npx_bin, "remotion", "render",
-            "TalkingHead",
+            remotion_cmd,
+            *([] if local_remotion.exists() else ["remotion"]),
+            "render", "src/index.tsx", composition,
             f"--props={props_file.relative_to(root)}",
             f"--width={width}", f"--height={height}", "--fps=30",
+            f"--duration={total_frames}",
             f"--frames=0-{total_frames - 1}",
             "--codec=h264", "--crf=18",
             f"--output={str(Path(output_path).resolve())}",
         ]
-        self.run_command(render_cmd, cwd=str(root))
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        browser_candidates = [
+            Path(os.environ["HYPERFRAMES_BROWSER_PATH"]) if os.environ.get("HYPERFRAMES_BROWSER_PATH") else None,
+            repo_root / ".runtime" / "hyperframes" / "chromium" / ("chrome.exe" if os.name == "nt" else "chromium"),
+        ]
+        if os.name == "nt":
+            for base_name, relative in (
+                ("PROGRAMFILES(X86)", "Microsoft/Edge/Application/msedge.exe"),
+                ("PROGRAMFILES", "Google/Chrome/Application/chrome.exe"),
+                ("LOCALAPPDATA", "Google/Chrome/Application/chrome.exe"),
+            ):
+                if os.environ.get(base_name):
+                    browser_candidates.append(Path(os.environ[base_name]) / relative)
+        browser = next((path for path in browser_candidates if path is not None and path.is_file()), None)
+        if browser is not None:
+            render_cmd.append(f"--browser-executable={browser}")
+        fallback = Path(__file__).resolve().parent.parent.parent / "scripts" / "node_network_fallback.cjs"
+        env = os.environ.copy()
+        require_fallback = f"--require={fallback}"
+        env["NODE_OPTIONS"] = " ".join(filter(None, [env.get("NODE_OPTIONS", ""), require_fallback]))
+        self.run_command(render_cmd, cwd=root, env=env)
 
         if not Path(output_path).exists():
             return ToolResult(success=False, error="Remotion render produced no output")
@@ -351,6 +463,8 @@ class RemotionCaptionBurn(BaseTool):
                 "caption_count": len(captions),
                 "overlay_count": len(overlays or []),
                 "words_per_page": words_per_page,
+                "style_preset": style_preset,
+                "composition": composition,
             },
             artifacts=[output_path],
         )
@@ -448,6 +562,7 @@ class RemotionCaptionBurn(BaseTool):
         words_per_page = inputs.get("words_per_page", 4)
         font_size = inputs.get("font_size", 52)
         highlight_color = inputs.get("highlight_color", "#22D3EE")
+        style_preset = inputs.get("style_preset", "standard")
 
         if not Path(input_path).exists():
             return ToolResult(success=False, error=f"Input video not found: {input_path}")
@@ -480,6 +595,15 @@ class RemotionCaptionBurn(BaseTool):
                 input_path, output_path, captions,
                 words_per_page, font_size, highlight_color,
                 overlays=overlays,
+                style_preset=style_preset,
+                headline=inputs.get("headline", ""),
+                eyebrow=inputs.get("eyebrow", "FASTBULL INSIGHT"),
+                page_name=inputs.get("page_name", "FASTBULL"),
+                cta=inputs.get("cta", "กดติดตาม"),
+                cta_start_seconds=inputs.get("cta_start_seconds"),
+                language=inputs.get("language", "th"),
+                sfx_cues=inputs.get("sfx_cues"),
+                insert_cues=inputs.get("insert_cues"),
             )
         else:
             result = self._render_ffmpeg(input_path, output_path, captions)

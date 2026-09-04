@@ -1,47 +1,66 @@
 # FASTBULL-EDITOR
 
-ระบบตัดต่อวิดีโออัตโนมัติของ FASTBULL ซึ่งพัฒนาต่อจาก
-[OpenMontage](https://github.com/calesthio/OpenMontage) โดยเริ่มจาก Runtime
-แบบไม่เสียค่า API สำหรับงานตัดต่อและ Motion Graphics
+ระบบตัดต่อคลิปพูดและ VLOG แนวตั้งอัตโนมัติของ FASTBULL พัฒนาต่อจาก
+[OpenMontage](https://github.com/calesthio/OpenMontage) และใช้ Runtime
+ในเครื่องแบบไม่เสียค่า API
 
-## สิ่งที่พร้อมใช้งานแล้ว
+## งานที่ระบบทำในคำสั่งเดียว
 
-- OpenMontage และ Python environment
-- HyperFrames CLI 0.8.27
-- Chromium Headless สำหรับตรวจและเรนเดอร์เฟรม
-- FFmpeg สำหรับประกอบไฟล์วิดีโอ
-- GSAP แบบ Local ไม่ต้องโหลดจาก CDN ระหว่างเรนเดอร์
-- Noto Sans Thai เป็นฟอนต์สำรองสำหรับข้อความและซับภาษาไทย
-- ปิด HyperFrames Telemetry
+- ตรวจความละเอียด เสียง ระยะเวลา และสุ่มเฟรมจากไฟล์ดิบ
+- ถอดเสียงไทยด้วย Whisper พร้อมเวลารายคำและแบ่งคำด้วย PyThaiNLP
+- ตรวจช่วงเงียบ คำซ้ำ คำฟิลเลอร์ และคำความมั่นใจต่ำ
+- ตัดช่วงเงียบแบบมีระยะเผื่อเพื่อไม่กินพยางค์
+- เลือกจังหวะสำหรับ VLOG, คุณค่า, Awareness หรือ Sales
+- ปรับเสียงพูดและความดังสำหรับโซเชียล
+- จับคู่ B-roll ในเครื่อง หรือสร้าง Motion Card เมื่อลูกค้าไม่มีภาพประกอบ
+- ใส่ซับ พาดหัว SPORT LUXURY Navy–Gold เอฟเฟกต์เสียง และ CTA
+- ส่งออก 1080×1920 H.264/AAC พร้อม `quality_report.json`
 
-## ติดตั้งบน Linux หรือ Codex Workspace
+## ติดตั้ง
 
-ติดตั้ง OpenMontage ก่อน:
+Windows: ดับเบิลคลิก `FASTBULL_SETUP_WINDOWS.bat`
 
-```bash
-make setup
-```
-
-จากนั้นติดตั้ง HyperFrames Runtime:
+Linux/macOS ที่มี Python, Node 22+ และ FFmpeg:
 
 ```bash
-bash scripts/setup_hyperframes_local.sh
+bash scripts/setup_fastbull_free.sh
 ```
 
-สคริปต์จะติดตั้ง Runtime, เตรียม Chromium และบันทึกค่าที่จำเป็นลง `.env`
-โดยอัตโนมัติ ไม่ต้องใช้ API key
+ตรวจความพร้อม:
+
+```bash
+.venv/bin/python scripts/fastbull_editor.py doctor
+```
+
+## ตัดคลิป
+
+Windows: ลาก MP4 ไปวางบน `FASTBULL_EDIT.bat`
+
+หรือใช้คำสั่ง:
+
+```bash
+.venv/bin/python scripts/fastbull_editor.py run \
+  --input clip.mp4 --mode value \
+  --headline "มีเงินแล้ว มีเวลาหรือยัง?" \
+  --page-name FASTBULL --cta "กดติดตาม"
+```
+
+ผลลัพธ์และรายงานอยู่ใน `FASTBULL_OUTPUT/` ถ้ามี B-roll ที่ได้รับอนุญาต
+ให้เพิ่ม `--broll path/to/folder`
 
 ## ต้นทุน
 
-การตัดต่อด้วย HyperFrames, Chromium และ FFmpeg ภายในเครื่องมีค่า API
-เท่ากับ 0 บาท แต่ยังใช้ทรัพยากร CPU, พื้นที่จัดเก็บ และเวลาในการเรนเดอร์
-
-บริการสร้างภาพ วิดีโอ เสียง หรือ Stock Media จากผู้ให้บริการภายนอกเป็นส่วนเสริม
-และอาจมีค่าใช้จ่ายภายหลัง ผู้ใช้สามารถเลือกเปิดเฉพาะบริการที่ต้องการได้
+FFmpeg, Whisper, PyThaiNLP, Remotion, HyperFrames, Chromium และเสียงที่สร้างในเครื่อง
+มีค่า API 0 บาท แต่ยังใช้ทรัพยากร CPU/GPU พื้นที่เก็บไฟล์ อินเทอร์เน็ตตอนติดตั้ง
+และค่าไฟ บริการสร้างสื่อหรือ Stock ภายนอกไม่จำเป็นและจะไม่ถูกเรียกอัตโนมัติ
 
 ## หมายเหตุเรื่องไฟล์ติดตั้ง
 
-Git จะไม่เก็บ `.env`, `node_modules/` และ `.runtime/` เพราะมีไฟล์เฉพาะเครื่อง
-หรือไฟล์ขนาดใหญ่ เมื่อ Clone โปรเจกต์ลงเครื่องใหม่ ให้รันสคริปต์ติดตั้งด้านบน
-เพื่อสร้างไฟล์เหล่านี้กลับมา
+Git ไม่เก็บ `.env`, `.venv`, `node_modules` และ `.runtime` เพราะเป็นไฟล์เฉพาะเครื่อง
+หรือมีขนาดใหญ่ เมื่อ Clone ลงเครื่องใหม่ให้รันตัวติดตั้งเพื่อสร้างกลับมา
 
+## ขอบเขตความปลอดภัย
+
+ระบบแก้เฉพาะคำที่ผู้ใช้ยืนยันผ่านไฟล์ corrections และลบช่วงเงียบอัตโนมัติ
+คำไม่ชัด คำเคลม ชื่อเฉพาะ ตัวเลข และประโยคที่อาจพูดผิดจะถูกทำเครื่องหมายไว้
+ให้คนตรวจ ไม่เดาแล้วลบทิ้ง ก่อนส่งลูกค้าต้องดูและฟังเต็มคลิปหนึ่งรอบ

@@ -51,7 +51,7 @@ _GSAP_CDN_URL = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"
 
 class HyperFramesCompose(BaseTool):
     name = "hyperframes_compose"
-    version = "0.2.0"
+    version = "0.2.1"
     tier = ToolTier.CORE
     capability = "video_post"
     provider = "hyperframes"
@@ -251,6 +251,39 @@ class HyperFramesCompose(BaseTool):
     _cli_probe_cache: Optional[dict[str, str]] = None
 
     @classmethod
+    def _local_cli_path(cls) -> Optional[Path]:
+        """Return an installed project-local HyperFrames launcher when present."""
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        suffix = ".cmd" if os.name == "nt" else ""
+        candidates = [
+            repo_root / "node_modules" / ".bin" / f"hyperframes{suffix}",
+            Path.cwd() / "node_modules" / ".bin" / f"hyperframes{suffix}",
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None
+
+    @classmethod
+    def _local_package_version(cls) -> Optional[str]:
+        cli = cls._local_cli_path()
+        if cli is None:
+            return None
+        package_json = cli.parent.parent / "hyperframes" / "package.json"
+        try:
+            return str(json.loads(package_json.read_text(encoding="utf-8"))["version"])
+        except (OSError, KeyError, TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _cli_command(cls) -> list[str]:
+        local_cli = cls._local_cli_path()
+        if local_cli is not None:
+            return [str(local_cli)]
+        npx = shutil.which("npx") or "npx"
+        return [npx, "--yes", cls._NPM_PACKAGE]
+
+    @classmethod
     def _node_major_version(cls) -> Optional[int]:
         """Return Node.js major version, or None if node isn't installed."""
         node = shutil.which("node")
@@ -336,14 +369,15 @@ class HyperFramesCompose(BaseTool):
         if cls._cli_probe_cache is not None:
             return cls._cli_probe_cache
 
+        local_cli = cls._local_cli_path()
         npx = shutil.which("npx")
-        if not npx:
+        if local_cli is None and not npx:
             cls._cli_probe_cache = {"error": "npx not on PATH"}
             return cls._cli_probe_cache
 
         try:
             proc = subprocess.run(
-                [npx, "--yes", cls._NPM_PACKAGE, "doctor", "--json"],
+                [*cls._cli_command(), "doctor", "--json"],
                 capture_output=True,
                 text=True,
                 timeout=20,
@@ -387,16 +421,21 @@ class HyperFramesCompose(BaseTool):
         if not ffmpeg_ok:
             reasons.append("ffmpeg not found on PATH")
 
-        # Only probe npm if the local tooling is actually usable — otherwise
-        # a missing-node run would also show a confusing npm error.
+        local_cli = self._local_cli_path()
+        local_version = self._local_package_version()
+
+        # An installed, pinned local CLI is authoritative and works offline.
         npm_resolve: dict[str, str] = {}
         if not reasons:
-            npm_resolve = self._resolve_npm_package()
-            if "error" in npm_resolve:
-                reasons.append(
-                    f"npm package `{self._NPM_PACKAGE}` not resolvable: "
-                    f"{npm_resolve['error']}"
-                )
+            if local_cli is not None:
+                npm_resolve = {"version": local_version or "installed"}
+            else:
+                npm_resolve = self._resolve_npm_package()
+                if "error" in npm_resolve:
+                    reasons.append(
+                        f"npm package `{self._NPM_PACKAGE}` not resolvable: "
+                        f"{npm_resolve['error']}"
+                    )
 
         cli_probe: dict[str, str] = {}
         if not reasons:
@@ -414,6 +453,8 @@ class HyperFramesCompose(BaseTool):
             "npm_resolve_error": npm_resolve.get("error"),
             "cli_probe_status": cli_probe.get("status"),
             "cli_probe_error": cli_probe.get("error"),
+            "cli_source": "local" if local_cli is not None else "npx",
+            "cli_path": str(local_cli) if local_cli is not None else None,
             "reasons": reasons,
         }
 
@@ -1407,7 +1448,7 @@ class HyperFramesCompose(BaseTool):
         want to raise CalledProcessError on non-zero exits — the caller
         parses lint/validate/render exit codes itself.
         """
-        cmd = ["npx", "--yes", "hyperframes", *args]
+        cmd = [*self._cli_command(), *args]
         # On Windows, resolve the .cmd wrapper so subprocess can find it
         # without shell=True.
         if os.name == "nt":

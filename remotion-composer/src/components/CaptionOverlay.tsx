@@ -29,6 +29,12 @@ type CaptionOverlayProps = {
   // Separator rendered between words. Space-delimited languages want the
   // default " "; CJK languages (no inter-word spacing) should pass "".
   wordSeparator?: string;
+  bottomPadding?: number;
+  maxWidthPercent?: number;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  boxShadow?: string;
 };
 
 interface CaptionPage {
@@ -65,7 +71,14 @@ const PageRenderer: React.FC<{
   backgroundColor: string;
   fontFamily: string;
   wordSeparator: string;
-}> = ({ page, fontSize, color, highlightColor, backgroundColor, fontFamily, wordSeparator }) => {
+  bottomPadding: number;
+  maxWidthPercent: number;
+  borderColor: string;
+  borderWidth: number;
+  borderRadius: number;
+  boxShadow: string;
+}> = ({ page, fontSize, color, highlightColor, backgroundColor, fontFamily, wordSeparator,
+  bottomPadding, maxWidthPercent, borderColor, borderWidth, borderRadius, boxShadow }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -83,7 +96,7 @@ const PageRenderer: React.FC<{
       style={{
         justifyContent: "flex-end",
         alignItems: "center",
-        paddingBottom: 80,
+        paddingBottom: bottomPadding,
       }}
     >
       <div
@@ -91,10 +104,12 @@ const PageRenderer: React.FC<{
           opacity: entrance,
           transform: `translateY(${interpolate(entrance, [0, 1], [20, 0])}px)`,
           backgroundColor,
-          borderRadius: 12,
+          borderRadius,
+          border: `${borderWidth}px solid ${borderColor}`,
           padding: "14px 28px",
-          maxWidth: "80%",
+          maxWidth: `${maxWidthPercent}%`,
           textAlign: "center",
+          boxShadow,
         }}
       >
         <span
@@ -144,6 +159,12 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
   backgroundColor = "rgba(15, 23, 42, 0.75)",
   fontFamily = "Space Grotesk, Inter, system-ui, sans-serif",
   wordSeparator = " ",
+  bottomPadding = 80,
+  maxWidthPercent = 80,
+  borderColor = "transparent",
+  borderWidth = 0,
+  borderRadius = 12,
+  boxShadow = "none",
 }) => {
   const { fps } = useVideoConfig();
   const pages = buildPages(words, wordsPerPage);
@@ -153,9 +174,11 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
       {pages.map((page, i) => {
         const fromFrame = Math.round((page.startMs / 1000) * fps);
         const nextStart = pages[i + 1]?.startMs ?? page.endMs + 500;
+        // Do not leave an old caption on-screen across a long pause.
+        const visibleUntil = Math.min(nextStart, page.endMs + 550);
         const duration = Math.max(
           1,
-          Math.round(((nextStart - page.startMs) / 1000) * fps)
+          Math.round(((visibleUntil - page.startMs) / 1000) * fps)
         );
 
         return (
@@ -168,6 +191,12 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
               backgroundColor={backgroundColor}
               fontFamily={fontFamily}
               wordSeparator={wordSeparator}
+              bottomPadding={bottomPadding}
+              maxWidthPercent={maxWidthPercent}
+              borderColor={borderColor}
+              borderWidth={borderWidth}
+              borderRadius={borderRadius}
+              boxShadow={boxShadow}
             />
           </Sequence>
         );

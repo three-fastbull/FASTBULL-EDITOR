@@ -1,0 +1,4 @@
+interface:
+  display_name: "FASTBULL Editor"
+  short_description: "ตัดคลิปไทยอัตโนมัติแบบ Local-first"
+  default_prompt: "ตัดคลิปนี้ด้วย FASTBULL Editor โดยใช้โหมดคุณค่า"
